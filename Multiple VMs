@@ -1,0 +1,99 @@
+##################################################################################
+#                                                                                #
+#                             PURE AUTOMATION                                    #
+#                                                                                #
+#                               Please Read!                                     #
+#                                                                                #
+#       This Script will create Windows Server 2016 as many as you want!         #
+#           This will ask you to type a Name for the ResourceGroup               #
+#                                  AND                                           #
+#               How many VMs you want to create with ONE SHOT!                   #
+#               This will create one vNet, one Subnet, one NSG                   #
+#                       Public-ip (Dynamic) for each VM,                         #
+#            and a nic for each VM. The VM sizes are Standard_DS2_v2.            #
+#                                                                                #
+#                        Created By Zamil Abedin                                 #
+#                         Swish no. 0763944016! :)                               #
+#                                                                                #
+##################################################################################
+
+
+# Variables for common values- Names are editable
+$resourceGroup = read-host "Zamil Wants to Know What Do You Want to Call Your ResourceGroup?"
+$location = "northeurope"
+$vmName = read-host "Enter the name of the VMs"
+$count = read-host "Zamil Wants to Know How Many VMs You Want to Create?"
+
+
+# Create user Credentials
+$cred = Get-Credential -Message "Zamil is asking you to Enter a Admin username and password for the virtual machines."
+
+
+# Create a resource group
+New-AzureRmResourceGroup -Name $resourceGroup -Location $location
+
+
+# Create a subnet configuration
+$subnetConfig = New-AzureRmVirtualNetworkSubnetConfig -Name Subnet1 -AddressPrefix 192.168.1.0/24
+
+
+# Create a virtual network
+$vnet = New-AzureRmVirtualNetwork -ResourceGroupName $resourceGroup -Location $location `
+  -Name $resourceGroup-vNET -AddressPrefix 192.168.0.0/16 -Subnet $subnetConfig
+
+
+# Create an inbound network security group rule for port 3389
+$nsgRuleRDP = New-AzureRmNetworkSecurityRuleConfig -Name $resourceGroup-NSG  -Protocol Tcp `
+  -Direction Inbound -Priority 1000 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * `
+  -DestinationPortRange 3389 -Access Allow
+
+
+  #############################################################################################################
+  ####### Turn these nsgRules if you want to open port 80 and 443.
+  ####### Don't FORGET to put rules after 'SecurityRules' as nsgRuleRDP
+
+  ##Create an inbound network security group rule for port 80 ---- Open this if you want
+##$nsgRuleHTTP = New-AzureRmNetworkSecurityRuleConfig -Name $resourceGroup-NSG  -Protocol Tcp `
+    ##-Direction Inbound -Priority 1001 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * `
+   ##-DestinationPortRange 80 -Access Allow
+
+     # Create an inbound network security group rule for port 443 ---- Open this if you want
+##$nsgRuleHTTPS = New-AzureRmNetworkSecurityRuleConfig -Name $resourceGroup-NSG  -Protocol Tcp `
+    ##-Direction Inbound -Priority 1001 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * `
+   ##-DestinationPortRange 443 -Access Allow
+   #############################################################################################################
+
+# Some funny message
+echo "Please Be Patience! Your Virtual Machines are Being Created !!"
+
+# Create a network security group
+$nsg = New-AzureRmNetworkSecurityGroup -ResourceGroupName $resourceGroup -Location $location `
+  -Name $resourceGroup-NSG -SecurityRules $nsgRuleRDP
+
+
+
+for ($i = 1; $i -le $count; $i++) {
+
+# Create a public IP address and specify a DNS name
+$pip = New-AzureRmPublicIpAddress -ResourceGroupName $resourceGroup -Location $location `
+  -Name $vmName$i-ip -AllocationMethod Dynamic -IdleTimeoutInMinutes 4
+
+# Create a virtual network card and associate with public IP address and NSG
+$nic = New-AzureRmNetworkInterface -Name $vmName$i-Nic -ResourceGroupName $resourceGroup -Location $location `
+  -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
+
+
+# Create a virtual machine configuration
+$vmConfig = New-AzureRmVMConfig -VMName $vmName-$i -VMSize Standard_DS2_v2 | `
+Set-AzureRmVMOperatingSystem -Windows -ComputerName $vmName$i -Credential $cred | `
+Set-AzureRmVMSourceImage -PublisherName MicrosoftWindowsServer -Offer WindowsServer -Skus 2016-Datacenter -Version latest | `
+Set-AzureRmVMBootDiagnostics -disable | `
+Add-AzureRmVMNetworkInterface -Id $nic.Id
+
+New-AzureRmVM -ResourceGroupName $resourceGroup -Location $location -VM $vmConfig
+
+echo "Your VM--" $vmName$i "Has Been Created."
+}
+
+# Some funny message
+echo "You Have Successfully Created Your Virtual Machines!"
